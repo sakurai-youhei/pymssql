@@ -25,6 +25,7 @@ import os
 import os.path as osp
 import sys
 import platform
+import re
 
 # Hack to prevent stupid TypeError: 'NoneType' object is not callable error on
 # exit of python setup.py test in multiprocessing/util.py _exit_function when
@@ -59,7 +60,8 @@ else:
 from setuptools.command.test import test as TestCommand
 
 LINK_FREETDS_STATICALLY = True
-LINK_OPENSSL = False
+LINK_OPENSSL = re.search(r'(\d+)\.(\d+)\.(\d+)[a-z]',
+                         os.getenv('PYMSSQL_LINK_OPENSSL', ''))
 
 ROOT = osp.abspath(osp.dirname(__file__))
 
@@ -288,24 +290,29 @@ class build_ext(_build_ext):
                     freetds_dir = 'vs2010'
                 else:
                     freetds_dir = 'vs2008'
+
+                if LINK_OPENSSL:
+                    print("setup.py: OpenSSL => %s" % LINK_OPENSSL.group())
+                    if tuple(map(int, LINK_OPENSSL.groups())) >= (1, 1, 0):
+                        # OpenSSL 1.1.0b or above
+                        openssl_libraries = ['libssl', 'libcrypto']
+                    else:
+                        # OpenSSL 1.0.2j or below
+                        openssl_libraries = ['libeay32MD', 'ssleay32MD']
+                else:
+                    openssl_libraries = []
+
                 if LINK_FREETDS_STATICALLY:
                     libraries = [
                         'db-lib', 'tds', 'replacements',
                         'iconv',
                         'ws2_32', 'wsock32', 'kernel32', 'shell32',
-                    ]
-                    if LINK_OPENSSL:
-                        libraries.extend([
-                            'libeay{}MD'.format(BITNESS),
-                            'ssleay{}MD'.format(BITNESS)
-                        ])
+                    ] + openssl_libraries
                 else:
                     libraries = [
                         'ct', 'sybdb',
                         'ws2_32', 'wsock32', 'kernel32', 'shell32',
-                    ]
-                    if LINK_OPENSSL:
-                        libraries.extend(['libeay32MD', 'ssleay32MD'])
+                    ] + openssl_libraries
 
             FREETDS = fpath('freetds', '{0}_{1}'.format(freetds_dir, BITNESS))
             suffix = '' if BITNESS == 32 else '64'
